@@ -1,4 +1,17 @@
 # =========== AI DECLARATION ============
+
+'''
+I used Claude to organize my code and create my section labels and some comments.
+I also used Claude to find libraries I need and how to navigate these libraries
+I used AI generally over the project to help debug, especially with lines of code
+where I was not familiar with the libraries or type of object, especially text boxes
+AI also wrote some skeletons for functions, and helped me decide what methods I need
+Lastly, I used AI to offload some of the busy work like when I wanted to change the colors of
+multiple buttons and manually would have to go back and change each line. I could just copy and paste
+the changes AI made on all of them at once which took a tenth of the time.
+Despite the use of AI, I fully understand my code and can explain what each line does.
+'''
+
 # ============ FEATURE STRING ============
 # =============== IMPORTS ================
 
@@ -25,7 +38,6 @@ PLOT_BOTTOM = 640           #bottom of chart
 
 POSTIT_FILL = rgb(255, 253, 156)
 SCHOOL_FONT = 'xkcd'
-
 # =========== BLACK-SCHOLES MATH =========
 
 N = statistics.NormalDist().cdf
@@ -46,7 +58,6 @@ def blackScholes(S,K,T,r,sigma):
     return call,put
 
 # ============ SLIDER CLASS ==============
-  
 class Slider:
     def __init__(self, id, label, x, y, width, minVal, maxVal, currVal):
         self.id = id # 'S','K','T','r','sigma'
@@ -74,7 +85,6 @@ class Slider:
         return withinX and withinY
 
 # ============ TEXT CLASS ==============
-
 class TextInput:
     def __init__(self, id, x, y, width, height, initialValue, allowLetters=False):
         self.id = id
@@ -155,6 +165,17 @@ def onAppStart(app):
     app.textInputs = buildTextInputs(app)
     app.selectedInput = None
     app.tickerInput = TextInput("ticker", 490, 15, 80, 22, "AAPL", allowLetters=True)
+
+    # --- Test ---
+    app.testPhase = 'selectLevel'
+    app.testLevel = None
+    app.testShowCall = True
+    app.testUserPoints = []
+    app.testChartBounds = None
+    app.testScore = None
+    app.testSubmitMessage = None
+    app.testSliderLock = False
+
 
     recomputePrices(app)
 
@@ -342,6 +363,7 @@ def syncTextInputFromSlider(app, slider):
 
 def redrawAll(app):
     drawBackground(app)
+
     if app.mode == "start":
         drawIntroScreen(app)
 
@@ -352,8 +374,8 @@ def redrawAll(app):
         drawChart(app)
         drawTickerBar(app)
 
-    elif app.mode == 'learning':
-        drawLearningScreen(app)
+    elif app.mode == 'test':
+        drawTestScreen(app)
 
     elif app.mode == 'instructions':
         drawInstructionsScreen(app)
@@ -363,8 +385,10 @@ def redrawAll(app):
 
 def drawSliderPanel(app):
     drawRect(RIGHT_PANEL_X, 50, app.width - RIGHT_PANEL_X - 15, 380,
-             fill=rgb(250, 250, 252), border=rgb(180, 180, 190), borderWidth=3)
-    drawLabel("SLIDERS", RIGHT_PANEL_LABEL_X, 30, size=20, bold=True)
+             fill=POSTIT_FILL, border='black', borderWidth=3,opacity=60)
+    drawLabel("SLIDERS", RIGHT_PANEL_LABEL_X, 30, size=20, bold=True,font=SCHOOL_FONT)
+
+
 
     for i, slider in enumerate(app.sliders):
         x = slider.getSliderX()
@@ -396,31 +420,31 @@ def drawTextInput(textInput):
     drawLabel(textInput.text,
               textInput.x + textInput.width / 2,
               textInput.y + textInput.height / 2,
-              size=11)
+              size=11,font=SCHOOL_FONT)
 
 def drawPricePanel(app):
 
-    drawRect(RIGHT_PANEL_X, 475, app.width - RIGHT_PANEL_X - 20, 70, fill=rgb(250, 250, 252),
-             border=rgb(180, 180, 190), borderWidth=3)
-    drawLine(RIGHT_PANEL_LABEL_X, 475, RIGHT_PANEL_LABEL_X, 545,fill=rgb(180, 180, 190))
-    drawLabel("PRICES", RIGHT_PANEL_LABEL_X, 455, size=20, bold=True)
-    drawLabel("CALL", RIGHT_PANEL_X+RIGHT_PANEL_WIDTH/4, 495, size=16, bold=True)
-    drawLabel("PUT", RIGHT_PANEL_X+RIGHT_PANEL_WIDTH*0.75, 495, size=16, bold=True)
+    drawRect(RIGHT_PANEL_X, 475, app.width - RIGHT_PANEL_X - 20, 70, fill=POSTIT_FILL,
+             border='black', borderWidth=3,opacity=60)
+    drawLine(RIGHT_PANEL_LABEL_X, 475, RIGHT_PANEL_LABEL_X, 545)
+    drawLabel("PRICES", RIGHT_PANEL_LABEL_X, 455, size=20, bold=True,font=SCHOOL_FONT)
+    drawLabel("CALL", RIGHT_PANEL_X+RIGHT_PANEL_WIDTH/4, 495, size=16, bold=True,font=SCHOOL_FONT)
+    drawLabel("PUT", RIGHT_PANEL_X+RIGHT_PANEL_WIDTH*0.75, 495, size=16, bold=True,font=SCHOOL_FONT)
     drawLabel(f'${app.callPrice:.2f}', RIGHT_PANEL_X+RIGHT_PANEL_WIDTH/4, 520, size=16)
     drawLabel(f'${app.putPrice:.2f}', RIGHT_PANEL_X+RIGHT_PANEL_WIDTH*0.75, 520, size=16)
 
 
 def drawGreekPanel(app):
     drawRect(RIGHT_PANEL_X, 595, app.width - RIGHT_PANEL_X - 15, 80,
-             fill=rgb(250, 250, 252), border=rgb(180, 180, 190), borderWidth=3)
-    drawLabel("GREEKS", RIGHT_PANEL_LABEL_X, 575, size=20, bold=True)
+             fill=POSTIT_FILL, border='black', borderWidth=3,opacity=60)
+    drawLabel("GREEKS", RIGHT_PANEL_LABEL_X, 575, size=20, bold=True,font=SCHOOL_FONT)
 
-    drawLine(RIGHT_PANEL_X, 635, RIGHT_PANEL_X+RIGHT_PANEL_WIDTH, 635, fill=rgb(180, 180, 190)) #horizontal line
+    drawLine(RIGHT_PANEL_X, 635, RIGHT_PANEL_X+RIGHT_PANEL_WIDTH, 635) #horizontal line
 
     # 3 vertical lines
     step = RIGHT_PANEL_WIDTH / 4
     for i in range(1, 4):
-        drawLine(RIGHT_PANEL_X + step * i, 595, RIGHT_PANEL_X + step * i, 675, fill=rgb(180, 180, 190))
+        drawLine(RIGHT_PANEL_X + step * i, 595, RIGHT_PANEL_X + step * i, 675)
     '''
     AI USE: CLAUDE
     PROBLEM: original code was opposite of beautiful but worked
@@ -493,9 +517,9 @@ def drawChartTicks(toScreen, minX, maxX, minY, maxY):
         drawLabel(f'${value:.0f}', PLOT_LEFT - 12, screenY, size=9, align='right')
 
 def drawChartTitleLegend(app):
-    optionType = "Call" if app.showCall else "Put"
-    drawLabel(f"{optionType} Option Value vs Stock Price", 110,
-              PLOT_TOP - 37.5, size=16, bold=True, align='left')
+    optionType = "CALL" if app.showCall else "PUT"
+    drawLabel(f"{optionType} OPTION VALUE VS STOCK PRICE", 130,
+              PLOT_TOP - 37, size=16, bold=True, align='left',font=SCHOOL_FONT)
 
     # legend in top-right of chart
     LEGEND_X = PLOT_RIGHT - 150
@@ -508,6 +532,12 @@ def drawChartTitleLegend(app):
     # green "BS price" curve
     drawLine(LEGEND_X, LEGEND_Y + 20, LEGEND_X + 25, LEGEND_Y + 20, fill='green', lineWidth=2)
     drawLabel("Black-Scholes Price", LEGEND_X + 30, LEGEND_Y + 20, size=11, align='left')
+
+    # tape
+    drawRect(615,226,40,100,opacity=20)
+    drawRect(615, 480, 40, 100,opacity=20)
+    drawRect(5, 226, 40, 100, opacity=20)
+    drawRect(5, 480, 40, 100, opacity=20)
 
     '''
     AI USE: CLAUDE
@@ -559,12 +589,12 @@ def drawBSCurve(toScreen, samples):
 
 
 def drawTickerBar(app):
-    drawLabel("Ticker:", 480, 26, size=12, bold=True, align='right')
+    drawLabel("TICKER:", 480, 26, size=13, bold=True, align='right',font=SCHOOL_FONT)
     drawTextInput(app.tickerInput)
 
     # LOAD button
     drawRect(575, 15, 60, 22, fill=rgb(220, 220, 240), border='black',)
-    drawLabel("LOAD", 605, 26, size=12, bold=True)
+    drawLabel("LOAD", 605, 26, size=12, bold=True,font=SCHOOL_FONT)
 
 def drawBackground(app):
     drawRect(0, 0, app.width, app.height, fill='lightBlue', opacity=30)
@@ -614,7 +644,7 @@ def drawInstructionsScreen(app):
     drawLabel("ENTER --> Confirm text input", 305, 270, size=14)
     drawLabel("ESC --> Cancel text input", 305, 305, size=14)
 
-    drawLabel("FOR TESTING: ", 305, 375, size=14, bold=Tru,font=SCHOOL_FONTe)
+    drawLabel("FOR TESTING: ", 305, 375, size=14, bold=True,font=SCHOOL_FONT)
     drawLabel("ENTER --> Submit drawing", 305, 410, size=14)
 
     # ---------- How to use ----------
@@ -688,34 +718,72 @@ def drawExplanationScreen(app):
               275+PANEL_X, 627, size=13)
 
     # ---------- black-scholes ----------
-    drawLabel("BLACK-SCHOLES", 805, 120, size=20, bold=True, align='center',font=SCHOOL_FONT)
-    drawRect(680,145, 250, 375,
+    drawLabel("BLACK-SCHOLES", 805, 90, size=20, bold=True, align='center',font=SCHOOL_FONT)
+    drawRect(680,115, 250, 375,
              fill=POSTIT_FILL, border='black', borderWidth=3,opacity=60)
+    drawLine(680, 290, 930, 290, fill='black', lineWidth=3,opacity=60)
     drawLabel("C(S,t) = N(d1)S - N(d2)Ke^(-rT)",
-              805, 175, size=14, align='center')
+              805, 145, size=14, align='center')
     drawLabel("P(S,t) = N(-d2)Ke^(-rT) - N(-d1)S",
-              805, 205, size=14, align='center')
-    drawLabel("d1 = ",690,247.5,size=14,align='left')
+              805, 175, size=14, align='center')
+    drawLabel("d1 = ",690,217.5,size=14,align='left')
     drawLabel("(ln(S/K) + (r + (sigma^2)/2)*T)",
-              915, 235, size=14,align='right')
-    drawLine(720,248,920,248,lineWidth=0.7)
-    drawLabel("sigma(sqrt(T))",823,260,size=14,align='center')
-    drawLabel("d2 = d1 - sigma(sqrt(T))",805,290,size=14)
-    drawLine(680,320,930,320,fill='black',lineWidth=3)
+              915, 205, size=14,align='right')
+    drawLine(720,218,920,218,lineWidth=0.7)
+    drawLabel("sigma(sqrt(T))",823,230,size=14,align='center')
+    drawLabel("d2 = d1 - sigma(sqrt(T))",805,260,size=14)
 
-    drawLabel("C(S,t) -> call option price",805, 340, size=14)
-    drawLabel("P(S,t) -> put option price", 805, 370, size=14)
-    drawLabel("T -> time left before expiry in years", 805, 400, size=14)
-    drawLabel("S -> stock price", 805, 430, size=14)
-    drawLabel("r -> risk-free rate", 805, 460, size=14)
-    drawLabel("sigma (σ) -> volatility", 805, 490, size=14)
+    drawLabel("C(S,t) -> call option price",805, 310, size=14)
+    drawLabel("P(S,t) -> put option price", 805, 340, size=14)
+    drawLabel("T -> time left before expiry in years", 805, 370, size=14)
+    drawLabel("S -> stock price", 805, 400, size=14)
+    drawLabel("r -> risk-free rate", 805, 430, size=14)
+    drawLabel("sigma (σ) -> volatility", 805, 460, size=14)
 
-    drawRect(680,550,250,100,fill=POSTIT_FILL, border='black', borderWidth=3,opacity=60)
+    # ---------- Note ----------
+    drawRect(680,510,250,160,fill=POSTIT_FILL, border='black', borderWidth=3,opacity=60)
+    drawLabel("NOTE!!!",960, 590, size=20,font=SCHOOL_FONT,rotateAngle=90)
+    drawLabel("BS Model is designed to", 805, 530, size=14)
+    drawLabel("price European options,", 805, 550, size=14)
+    drawLabel("which can only be exercised", 805, 570, size=14)
+    drawLabel("on the expiration date.", 805, 590, size=14)
+    drawLabel("American options have an", 805, 610, size=14)
+    drawLabel("early exercise feature that", 805, 630, size=14)
+    drawLabel("is unattended with this model", 805, 650, size=14)
 
-def drawLearningScreen(app):
+def drawTestScreen(app):
     drawBackButton()
-    drawLabel("TEST MODE", app.width / 2, 25, size=25, bold=True,font=SCHOOL_FONT)
-    drawLabel("Under construction", app.width / 2, 300, size=16)
+    drawLabel("TEST YOURSELF!", 300, 25, size=25, bold=True,font=SCHOOL_FONT)
+    drawSliderPanel(app)
+
+    if app.testPhase == 'selectLevel':
+        drawLevelSelection(app)
+    elif app.testPhase == 'drawing':
+        pass
+    elif app.testPhase == 'grading':
+        pass
+
+def drawLevelSelection(app):
+    drawRect(100, 90, 450, 450,
+             fill=POSTIT_FILL, border='black', borderWidth=3, opacity=90)
+    drawRect(325,90,100,40,opacity=20,align='center')
+    drawLabel("LEVEL SELECTION",325,150,bold=True,size=24,font=SCHOOL_FONT)
+    for i in range(1,6):
+        drawRect(190,140+i*60,90,30,fill='pink',opacity=90,align='center',border='black')
+        drawLabel(f"LEVEL {i}: ",150,140 + i*60, font=SCHOOL_FONT,
+                  size=20,align='left')
+    drawLabel("1 slider changed to an endpoint",250,200,
+              size=16,font=SCHOOL_FONT,align='left',bold=True)
+    drawLabel("2 sliders changed to an endpoint", 250, 260,
+              size=16, font=SCHOOL_FONT, align='left', bold=True)
+    drawLabel("2 sliders changed", 250, 320,
+              size=16, font=SCHOOL_FONT, align='left', bold=True)
+    drawLabel("3 sliders changed", 250, 380,
+              size=16, font=SCHOOL_FONT, align='left', bold=True)
+    drawLabel("4 sliders changed", 250, 440,
+              size=16, font=SCHOOL_FONT, align='left', bold=True)
+    drawLabel("Click a highlighted box to select!",325,500,
+              size=16, font=SCHOOL_FONT, bold=True)
 
 def drawBackButton():
     drawRect(0, 0, 100, 35, fill='red', opacity=60, border='black')
@@ -810,8 +878,18 @@ def onMousePress(app, mouseX, mouseY):
         elif 150 <= mouseX <= 450 and 400 <= mouseY <= 500:
             app.mode = 'main'
         elif 550 <= mouseX <= 850 and 400 <= mouseY <= 500:
-            app.mode = 'learning'
+            app.mode = 'test'
 
+    elif app.mode == 'test':
+        if app.testPhase == 'selectLevel':
+            if 145 <= mouseX <= 235:
+                for i in range(1,6):
+                    topY = 125 + i*60
+                    bottomY = topY+30
+                    if topY <= mouseY <= bottomY:
+                        app.level = i
+                        app.testPhase = 'drawing'
+                        return
 
 def onMouseDrag(app,mouseX,mouseY):
     if app.currSlider is not None:
@@ -824,7 +902,7 @@ def onMouseRelease(app,mouseX,mouseY):
     app.currSlider = None
 
 def onBackButton(mouseX,mouseY):
-    if ((10 <= mouseX) and (mouseX <= 80) and (7 <= mouseY) and (mouseY <= 37)):
+    if mouseX <= 100 and mouseY <= 35:
         return True
     return False
 
