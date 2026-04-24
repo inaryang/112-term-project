@@ -13,12 +13,14 @@ Despite the use of AI, I fully understand my code and can explain what each line
 '''
 
 # ============ FEATURE STRING ============
+
 # =============== IMPORTS ================
 
 from cmu_graphics import *
 import math
 import statistics
 import yfinance as yf
+import random
 
 # ============== CONSTANTS ===============
 
@@ -38,6 +40,10 @@ PLOT_BOTTOM = 640           #bottom of chart
 
 POSTIT_FILL = rgb(255, 253, 156)
 SCHOOL_FONT = 'xkcd'
+
+NUM_BINS = 100
+COVERAGE_THRESHOLD = 0.85
+
 # =========== BLACK-SCHOLES MATH =========
 
 N = statistics.NormalDist().cdf
@@ -175,7 +181,8 @@ def onAppStart(app):
     app.testScore = None
     app.testSubmitMessage = None
     app.testSliderLock = False
-
+    app.testDrawing = False  # True while mouse held down in chart section
+    app.testAvgError = None
 
     recomputePrices(app)
 
@@ -253,9 +260,134 @@ def computeGreeks(app):
     app.vega = vega
     app.theta = theta
 
+def buildTestProblems(app):
+    # (how many sliders move, True if only endpoints)
+
+    LEVEL_RULES = {
+        1: (1,True),
+        2: (2,True),
+        3: (2,False),
+        4: (3,False),
+        5: (4,False)
+    }
+    app.testDrawing = False
+    moveCount, endpointsOnly = LEVEL_RULES[app.testLevel]
+
+    # reset to midpoint
+    for slider in app.sliders:
+        slider.currVal = (slider.minVal + slider.maxVal) / 2
+
+    movingSliders = random.sample(app.sliders,moveCount)
+
+    for movingSlider in movingSliders:
+        if endpointsOnly:
+            movingSlider.currVal = random.choice([movingSlider.minVal, movingSlider.maxVal])
+        else:
+            movingSlider.currVal = random.uniform(movingSlider.minVal, movingSlider.maxVal)
+
+    recomputePrices(app)
+
+    #sync textboxes
+    for slider in app.sliders:
+        syncTextInputFromSlider(app, slider)
+
+    # freeze chart bounds since they aren't moving
+    minX = min(app.S, app.K) * 0.5
+    maxX = max(app.S, app.K) * 1.5
+    minY = 0
+
+    # maxY same as drawChart
+    samples, maxBS = sampleBSCurve(app, minX, maxX, app.testShowCall)
+    if app.testShowCall:
+        maxY = max(maxX - app.K, maxBS) * 1.1
+    else:
+        maxY = max(app.K - minX, maxBS) * 1.1
+    app.testChartBounds = (minX, maxX, minY, maxY)
+
+    # clear last round
+    app.testUserPoints = []
+    app.testScore = None
+    app.testSubmitMessage = None
+
+def inChartArea(mouseX,mouseY):
+    return (PLOT_LEFT <= mouseX <= PLOT_RIGHT and
+            PLOT_TOP <= mouseY <= PLOT_BOTTOM)
+
+'''
+AI USE: CLAUDE
+PROBLEM: program wouldn't register if user drawing was below the curve
+SOLUTION: track coverage using x-coordinate bins regardless of y
+WHERE: computeCoverage
+'''
+def computeCoverage(app):
+    if (not app.testUserPoints) or (app.testChartBounds is None):
+        return 0.0
+    minX, maxX, minY, maxY = app.testChartBounds
+    binWidth = (maxX - minX) / NUM_BINS
+    binsTouched = set()
+
+    # mark each individual point's bin
+    for (dx, dy) in app.testUserPoints:
+        binIdx = int((dx - minX) / binWidth)
+        if 0 <= binIdx < NUM_BINS:
+            binsTouched.add(binIdx)
+
+    # fill in bins between consecutive points
+    for i in range(1, len(app.testUserPoints)):
+        x1 = app.testUserPoints[i-1][0]
+        x2 = app.testUserPoints[i][0]
+        binA = int((min(x1, x2) - minX) / binWidth)
+        binB = int((max(x1, x2) - minX) / binWidth)
+        for b in range(binA, binB + 1):
+            if 0 <= b < NUM_BINS:
+                binsTouched.add(b)
+
+    return len(binsTouched) / NUM_BINS
+
+def gradeTestDrawing(app):
+    # bin user's drawing by (x, average y) in each bin.
+    # for each bin the user covered, compare to true BS y at bin center.
+    # accuracy = max(0.0, 100 * (1 - normalizedError / TOLERANCE))
+    if not app.testUserPoints or app.testChartBounds is None:
+        return None
+
+    minX, maxX, minY, maxY = app.testChartBounds
+    binWidth = (maxX - minX) / NUM_BINS
+
+    # collect y-values in each bin
+    binYValues = {}   # binIdx -> list of y values
+    for (dx, dy) in app.testUserPoints:
+        binIdx = int((dx - minX) / binWidth)
+        if 0 <= binIdx < NUM_BINS:
+            if binIdx not in binYValues:
+                binYValues[binIdx] = []
+            binYValues[binIdx].append(dy)
+
+    # average each bin, compare to true BS at bin center
+    totalAbsError = 0
+    numBinsScored = 0
+    for binIdx, yList in binYValues.items():
+        userAvgY = sum(yList) / len(yList)
+        binCenterX = minX + (binIdx + 0.5) * binWidth
+        call, put = blackScholes(binCenterX, app.K, app.T, app.r, app.sigma)
+        trueY = call if app.testShowCall else put
+        totalAbsError += abs(userAvgY - trueY)
+        numBinsScored += 1
+
+    if numBinsScored == 0:
+        return None
+
+    avgError = totalAbsError / numBinsScored
+    yRange = maxY - minY
+    normalizedError = avgError / yRange if yRange > 0 else 0
+
+    TOLERANCE = 0.25   # 25% of chart height avg error = 0 points
+    score = max(0, 100 * (1 - normalizedError / TOLERANCE))
+
+    return (score, avgError)
+
 def fetchHistoricalPrices(ticker, period):
     # returns list of daily closing prices or None if it fails
-
     try:
         stock = yf.Ticker(ticker)
         hist = stock.history(period=period)
@@ -333,6 +465,11 @@ def dataToScreen(dataX,dataY,minX,maxX,minY,maxY):
     screenY = PLOT_BOTTOM - (dataY - minY) / (maxY - minY) * (PLOT_BOTTOM - PLOT_TOP)
     return (screenX, screenY)
 
+def screenToData(screenX, screenY, minX, maxX, minY, maxY):
+    dataX = minX + (screenX - PLOT_LEFT) / (PLOT_RIGHT - PLOT_LEFT) * (maxX - minX)
+    dataY = minY + (PLOT_BOTTOM - screenY) / (PLOT_BOTTOM - PLOT_TOP) * (maxY - minY)
+    return (dataX, dataY)
+
 def commitTextInput(app, textInput):
     matching = findSliderById(app, textInput.id)
     if matching is None:
@@ -360,6 +497,25 @@ def syncTextInputFromSlider(app, slider):
             textInput.setValueFromNumber(slider.currVal)
             textInput.highlighted = False
             return
+
+def switchTestOptionType(app, showCall):
+    # User toggled call/put mid-round. Keep the slider values, but
+    # regenerate chart bounds and payoff for the new option type,
+    # and clear their drawing.
+    app.testShowCall = showCall
+
+    minX, maxX, minY, maxY_old = app.testChartBounds
+    # recompute maxY for the new option type
+    samples, maxBS = sampleBSCurve(app, minX, maxX, app.testShowCall)
+    if app.testShowCall:
+        maxY = max(maxX - app.K, maxBS) * 1.1
+    else:
+        maxY = max(app.K - minX, maxBS) * 1.1
+    app.testChartBounds = (minX, maxX, 0, maxY)
+
+    # clear drawing — user is solving a different problem now
+    app.testUserPoints = []
+    app.testDrawing = False
 
 def redrawAll(app):
     drawBackground(app)
@@ -546,27 +702,16 @@ def drawChartTitleLegend(app):
     WHERE: sampleBSCurve, drawPayoff, drawBSCurve
     '''
 
-def sampleBSCurve(app, minX, maxX):
-    N_SAMPLES = 100
-    samples = []
-    maxBS = 0
-    for i in range(N_SAMPLES + 1):
-        sampleS = minX + i * (maxX - minX) / N_SAMPLES
-        call, put = blackScholes(sampleS, app.K, app.T, app.r, app.sigma)
-        price = call if app.showCall else put
-        samples.append((sampleS, price))
-        if price > maxBS:
-            maxBS = price
-    return samples, maxBS
-
 def drawSMarker(app, toScreen, maxY):
     topX, topY = toScreen(app.S, maxY)
     botX, botY = toScreen(app.S, 0)
     drawLine(topX, topY, botX, botY, fill='red', opacity=40, dashes=True)
     drawLabel(f'S = {app.S:.2f}', topX, PLOT_TOP - 5, size=10, fill='red', border='black', borderWidth=0.4)
 
-def drawPayoff(app, toScreen, minX, maxX):
-    if app.showCall:
+def drawPayoff(app, toScreen, minX, maxX, showCall=None):
+    if showCall is None:
+        showCall = app.showCall
+    if showCall:
         x1, y1 = toScreen(minX, 0)
         x2, y2 = toScreen(app.K, 0)
         x3, y3 = toScreen(maxX, maxX - app.K)
@@ -587,6 +732,20 @@ def drawBSCurve(toScreen, samples):
             drawLine(prevX, prevY, sx, sy, fill='green', lineWidth=2)
         prevX, prevY = sx, sy
 
+def sampleBSCurve(app, minX, maxX, showCall=None):
+    if showCall is None:
+        showCall = app.showCall
+    N_SAMPLES = 100
+    samples = []
+    maxBS = 0
+    for i in range(N_SAMPLES + 1):
+        sampleS = minX + i * (maxX - minX) / N_SAMPLES
+        call, put = blackScholes(sampleS, app.K, app.T, app.r, app.sigma)
+        price = call if showCall else put
+        samples.append((sampleS, price))
+        if price > maxBS:
+            maxBS = price
+    return samples, maxBS
 
 def drawTickerBar(app):
     drawLabel("TICKER:", 480, 26, size=13, bold=True, align='right',font=SCHOOL_FONT)
@@ -608,7 +767,7 @@ def drawBackground(app):
 def drawIntroScreen(app):
     # main labels
     drawLabel("LEARN THE BLACK-SCHOLES MODEL", app.width/2, 55, size=25, bold=True,font=SCHOOL_FONT)
-    drawLabel("Click the boxes as needed. Otherwise, press the space bar to continue.",
+    drawLabel("An interactive learning tool to simplify the complex ideas of options.",
               app.width/2,130,size=20,bold=True,font=SCHOOL_FONT)
 
     # buttons (rect order is same as label order)
@@ -646,6 +805,8 @@ def drawInstructionsScreen(app):
 
     drawLabel("FOR TESTING: ", 305, 375, size=14, bold=True,font=SCHOOL_FONT)
     drawLabel("ENTER --> Submit drawing", 305, 410, size=14)
+    drawLabel("C --> Switch to call option test", 305, 445, size=14)
+    drawLabel("P --> Switch to put option test", 305, 480, size=14)
 
     # ---------- How to use ----------
     drawLabel("HOW TO USE THE APP", 755, 120, size=20, bold=True,font=SCHOOL_FONT)
@@ -740,7 +901,7 @@ def drawExplanationScreen(app):
     drawLabel("r -> risk-free rate", 805, 430, size=14)
     drawLabel("sigma (σ) -> volatility", 805, 460, size=14)
 
-    # ---------- Note ----------
+    # ---------- note ----------
     drawRect(680,510,250,160,fill=POSTIT_FILL, border='black', borderWidth=3,opacity=60)
     drawLabel("NOTE!!!",960, 590, size=20,font=SCHOOL_FONT,rotateAngle=90)
     drawLabel("BS Model is designed to", 805, 530, size=14)
@@ -753,15 +914,14 @@ def drawExplanationScreen(app):
 
 def drawTestScreen(app):
     drawBackButton()
-    drawLabel("TEST YOURSELF!", 300, 25, size=25, bold=True,font=SCHOOL_FONT)
     drawSliderPanel(app)
 
     if app.testPhase == 'selectLevel':
         drawLevelSelection(app)
     elif app.testPhase == 'drawing':
-        pass
+        drawTestDrawingUI(app)
     elif app.testPhase == 'grading':
-        pass
+        drawTestGradedUI(app)
 
 def drawLevelSelection(app):
     drawRect(100, 90, 450, 450,
@@ -769,7 +929,7 @@ def drawLevelSelection(app):
     drawRect(325,90,100,40,opacity=20,align='center')
     drawLabel("LEVEL SELECTION",325,150,bold=True,size=24,font=SCHOOL_FONT)
     for i in range(1,6):
-        drawRect(190,140+i*60,90,30,fill='pink',opacity=90,align='center',border='black')
+        drawRect(190,140+i*60,90,30,fill='pink',opacity=90,align='center')
         drawLabel(f"LEVEL {i}: ",150,140 + i*60, font=SCHOOL_FONT,
                   size=20,align='left')
     drawLabel("1 slider changed to an endpoint",250,200,
@@ -784,6 +944,129 @@ def drawLevelSelection(app):
               size=16, font=SCHOOL_FONT, align='left', bold=True)
     drawLabel("Click a highlighted box to select!",325,500,
               size=16, font=SCHOOL_FONT, bold=True)
+
+def drawTestDrawingUI(app):
+    minX, maxX, minY, maxY = app.testChartBounds
+
+    def toScreen(dx, dy):
+        return dataToScreen(dx, dy, minX, maxX, minY, maxY)
+
+    drawChartPanelAxes()
+    drawChartTicks(toScreen, minX, maxX, minY, maxY)
+    drawTestChartTitle(app)
+    drawSMarker(app, toScreen, maxY)
+    drawPayoff(app, toScreen, minX, maxX, app.testShowCall)
+    drawUserStroke(app)
+
+    drawStatsPanel(app)
+    drawRect(615,226,40,100,opacity=20)
+    drawRect(615, 480, 40, 100,opacity=20)
+    drawRect(5, 226, 40, 100, opacity=20)
+    drawRect(5, 480, 40, 100, opacity=20)
+
+def drawTestChartTitle(app):
+    optionType = "CALL" if app.testShowCall else "PUT"
+    drawLabel(f"TEST YOURSELF! ({optionType})", 130, 25,
+              size=25, bold=True, font=SCHOOL_FONT, align='left')
+
+def drawUserStroke(app):
+    if len(app.testUserPoints) < 2:
+        return
+
+    minX, maxX, minY, maxY = app.testChartBounds
+
+    def toScreen(dx, dy):
+        return dataToScreen(dx, dy, minX, maxX, minY, maxY)
+
+    prevScreenX = prevScreenY = None
+    for (dx, dy) in app.testUserPoints:
+        sx, sy = toScreen(dx, dy)
+        if prevScreenX is not None:
+            drawLine(prevScreenX, prevScreenY, sx, sy,
+                     fill='green', lineWidth=2)
+        prevScreenX, prevScreenY = sx, sy
+
+def drawTestGradedUI(app):
+    minX, maxX, minY, maxY = app.testChartBounds
+
+    def toScreen(dx, dy):
+        return dataToScreen(dx, dy, minX, maxX, minY, maxY)
+
+    drawChartPanelAxes()
+    drawChartTicks(toScreen, minX, maxX, minY, maxY)
+    drawTestChartTitle(app)
+    drawSMarker(app, toScreen, maxY)
+    drawPayoff(app, toScreen, minX, maxX, app.testShowCall)
+    drawUserStroke(app)
+
+    # reveal true BS curve in orange
+    samples, _ = sampleBSCurve(app, minX, maxX, app.testShowCall)
+    prevX = prevY = None
+    for (sampleS, price) in samples:
+        sx, sy = toScreen(sampleS, price)
+        if prevX is not None:
+            drawLine(prevX, prevY, sx, sy, fill='orange', lineWidth=3)
+        prevX, prevY = sx, sy
+
+    drawStatsPanel(app)   # same panel, phase-aware
+
+def drawStatsPanel(app):
+    drawLabel("TEST STATS",
+              RIGHT_PANEL_LABEL_X, 455, size=20, bold=True, font=SCHOOL_FONT)
+    drawRect(RIGHT_PANEL_X, 480, app.width - RIGHT_PANEL_X - 15, 195,
+             fill=POSTIT_FILL, border='black', borderWidth=3, opacity=60)
+
+    drawLabel(f"LEVEL: {app.testLevel}",
+              RIGHT_PANEL_LABEL_X, 510, font=SCHOOL_FONT, size=18)
+
+    if app.testPhase == 'grading':
+        # --- Show results ---
+        score = app.testScore
+        if score >= 85:
+            grade, comment = "A", "Excellent!"
+        elif score >= 70:
+            grade, comment = "B", "Good job!"
+        elif score >= 50:
+            grade, comment = "C", "Not bad."
+        elif score >= 30:
+            grade, comment = "D", "Keep practicing."
+        else:
+            grade, comment = "F", "Try again!"
+
+        drawLabel(f"{score:.0f} / 100", RIGHT_PANEL_LABEL_X, 545,
+                  size=26, bold=True, font=SCHOOL_FONT)
+        drawLabel(f"Grade: {grade}", RIGHT_PANEL_LABEL_X, 580,
+                  size=16, bold=True, font=SCHOOL_FONT)
+        drawLabel(f"Avg error: ${app.testAvgError:.2f}",
+                  RIGHT_PANEL_LABEL_X, 605, size=13, font=SCHOOL_FONT)
+        drawLabel(comment, RIGHT_PANEL_LABEL_X, 630,
+                  size=14, font=SCHOOL_FONT)
+        drawLabel("Press enter to try again",
+                  RIGHT_PANEL_LABEL_X, 658,
+                  size=11, font=SCHOOL_FONT)
+    else:
+        # --- Show coverage / submit hint ---
+        coverage = computeCoverage(app)
+        submitFailed = app.testSubmitMessage is not None
+
+        if submitFailed:
+            coverageColor = 'red'
+        elif coverage >= COVERAGE_THRESHOLD:
+            coverageColor = 'green'
+        else:
+            coverageColor = 'black'
+
+        drawLabel(f"Coverage: {coverage * 100:.0f}%",
+                  RIGHT_PANEL_LABEL_X, 550,
+                  size=14, bold=True, font=SCHOOL_FONT, fill=coverageColor)
+
+        if submitFailed:
+            drawLabel(f"Need at least {COVERAGE_THRESHOLD*100:.0f}% coverage to submit!",
+                      RIGHT_PANEL_LABEL_X, 590,
+                      size=12, bold=True, fill='red', font=SCHOOL_FONT)
+        else:
+            drawLabel("Press ENTER to submit",
+                      RIGHT_PANEL_LABEL_X, 590, size=12, font=SCHOOL_FONT)
 
 def drawBackButton():
     drawRect(0, 0, 100, 35, fill='red', opacity=60, border='black')
@@ -811,16 +1094,42 @@ def onKeyPress(app, key):
                 app.selectedInput.handleKey(key)
             return
 
-        #toggle between call and put
+        # toggle between call and put (main mode)
         if key == 'c':
             app.showCall = True
         elif key == 'p':
             app.showCall = False
 
+    elif app.mode == 'test':
+        if app.testPhase == 'drawing':
+            if key == 'c':
+                switchTestOptionType(app, True)
+            elif key == 'p':
+                switchTestOptionType(app, False)
+            elif key == 'enter':
+                coverage = computeCoverage(app)
+                if coverage < COVERAGE_THRESHOLD:
+                    app.testSubmitMessage = (
+                        f"Need {COVERAGE_THRESHOLD*100:.0f}% coverage. "
+                        f"You have {coverage*100:.0f}%."
+                    )
+                else:
+                    result = gradeTestDrawing(app)
+                    if result is not None:
+                        app.testScore, app.testAvgError = result
+                        app.testPhase = 'grading'
+                        app.testSubmitMessage = None
+
+        elif app.testPhase == 'grading':
+            if key == 'enter':
+                buildTestProblems(app)
+                app.testPhase = 'drawing'
+
 
 def onMousePress(app, mouseX, mouseY):
     if onBackButton(mouseX, mouseY) and app.mode != 'start':
         app.mode = 'start'
+        app.testPhase = 'selectLevel'
         return
 
     if app.mode == 'main':
@@ -883,23 +1192,48 @@ def onMousePress(app, mouseX, mouseY):
     elif app.mode == 'test':
         if app.testPhase == 'selectLevel':
             if 145 <= mouseX <= 235:
-                for i in range(1,6):
-                    topY = 125 + i*60
-                    bottomY = topY+30
+                for i in range(1, 6):
+                    topY = 125 + i * 60
+                    bottomY = topY + 30
                     if topY <= mouseY <= bottomY:
-                        app.level = i
+                        app.testLevel = i
+
+                        buildTestProblems(app)
                         app.testPhase = 'drawing'
                         return
 
-def onMouseDrag(app,mouseX,mouseY):
+        elif app.testPhase == 'drawing':
+            if inChartArea(mouseX, mouseY):
+                app.testUserPoints = []
+                app.testDrawing = True
+                app.testSubmitMessage = None  # fresh start, clear any warning
+                minX, maxX, minY, maxY = app.testChartBounds
+                dx, dy = screenToData(mouseX, mouseY, minX, maxX, minY, maxY)
+                app.testUserPoints.append((dx, dy))
+                return
+
+def onMouseDrag(app, mouseX, mouseY):
     if app.currSlider is not None:
         app.currSlider.updateValueFromMouse(mouseX)
         syncTextInputFromSlider(app, app.currSlider)
         recomputePrices(app)
+        return
 
+    if app.mode == 'test' and app.testPhase == 'drawing' and app.testDrawing:
+        clampedX = max(PLOT_LEFT, min(PLOT_RIGHT, mouseX))
+        clampedY = max(PLOT_TOP, min(PLOT_BOTTOM, mouseY))
+        minX, maxX, minY, maxY = app.testChartBounds
+        dx, dy = screenToData(clampedX, clampedY, minX, maxX, minY, maxY)
+        app.testUserPoints.append((dx, dy))
 
-def onMouseRelease(app,mouseX,mouseY):
+        # Clear failed-submit warning once they've drawn enough to pass
+        if (app.testSubmitMessage is not None
+            and computeCoverage(app) >= COVERAGE_THRESHOLD):
+            app.testSubmitMessage = None
+
+def onMouseRelease(app, mouseX, mouseY):
     app.currSlider = None
+    app.testDrawing = False
 
 def onBackButton(mouseX,mouseY):
     if mouseX <= 100 and mouseY <= 35:
