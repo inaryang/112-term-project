@@ -9,11 +9,64 @@ AI also wrote some skeletons for functions, and helped me decide what methods I 
 Lastly, I used AI to offload some of the busy work like when I wanted to change the colors of
 multiple buttons and manually would have to go back and change each line. I could just copy and paste
 the changes AI made on all of them at once which took a tenth of the time.
+For parts where I got stuck, I used the 5-minute rule with AI's answer
+Lastly, AI wrote my grading shortcuts string and feature string, which I edited
 Despite the use of AI, I fully understand my code and can explain what each line does.
 '''
 
 # ============ FEATURE STRING ============
 
+'''
+LEARN THE BLACK-SCHOLES MODEL
+An interactive educational tool for understanding and simplifying European options pricing.
+
+=== KEY FEATURES ===
+
+1. LIVE VISUALIZER (Practice Mode)
+   - 5 draggable sliders (S, K, T, r, σ) that update in real time
+   - Bidirectional text inputs — type values OR drag sliders; they stay in sync
+   - Live chart: payoff (blue hockey stick) and Black-Scholes price (green curve),
+     with a red marker at the current stock price S
+   - Live call and put prices, plus all four Greeks (Δ, Γ, Θ, ν) computed via
+     numerical differentiation
+   - Toggle call/put view with C / P
+
+2. REAL MARKET DATA (yfinance)
+   - Type any stock ticker (AAPL, NVDA, TSLA, etc.) and press LOAD or ENTER
+   - Fetches current price + computes 3-month annualized historical volatility
+   - Auto-fills S and σ sliders; boxes turn green when data came from the API;
+     red border indicates an invalid ticker
+
+3. TEST MODE (5 difficulty levels)
+   - Level 1-2: 1 or 2 sliders moved to endpoints (easy)
+   - Level 3: 2 sliders moved to random values (medium)
+   - Level 4-5: 3 or 4 sliders moved to random values (hardest)
+   - User freehand-draws the Black-Scholes curve on the chart
+   - Must cover ≥85% of the x-range before the submission is accepted
+   - Smoothed by sampling through 100 bins and connected each of 
+     the y values with a straight line 
+   - Graded out of 100 based on average error vs. true curve, normalized to
+     chart height; letter grade and feedback shown
+   - On submission, the true curve is revealed in orange for comparison
+
+4. EXPLANATION SCREEN
+   - Plain-English overview of options, the Greeks, and chart elements
+   - Full Black-Scholes formula 
+   
+=== GRADING SHORTCUTS ===
+
+(Press these keys from anywhere in the app, except while typing in a text box)
+
+    v   → Jump to Practice Mode with AAPL auto-loaded (shows yfinance + live chart)
+    t   → Jump to Test Mode at Level 5 with a problem pre-generated (hardest test)
+    e   → Jump to the Explanation Screen (shows math + Greek definitions)
+
+=== STANDARD KEYBOARD ===
+
+    C / P           Toggle call vs. put view (practice or test mode)
+    ENTER           Submit text input / load ticker / submit test drawing
+    ESC             Cancel text input without saving
+'''
 # =============== IMPORTS ================
 
 from cmu_graphics import *
@@ -499,9 +552,9 @@ def syncTextInputFromSlider(app, slider):
             return
 
 def switchTestOptionType(app, showCall):
-    # User toggled call/put mid-round. Keep the slider values, but
-    # regenerate chart bounds and payoff for the new option type,
-    # and clear their drawing.
+    # User toggled call/put mid-round. Keep slider values,
+    # regenerate chart bounds and payoff for new option type,
+    # clear drawing.
     app.testShowCall = showCall
 
     minX, maxX, minY, maxY_old = app.testChartBounds
@@ -804,9 +857,12 @@ def drawInstructionsScreen(app):
     drawLabel("ESC --> Cancel text input", 305, 305, size=14)
 
     drawLabel("FOR TESTING: ", 305, 375, size=14, bold=True,font=SCHOOL_FONT)
-    drawLabel("ENTER --> Submit drawing", 305, 410, size=14)
-    drawLabel("C --> Switch to call option test", 305, 445, size=14)
-    drawLabel("P --> Switch to put option test", 305, 480, size=14)
+    drawLabel("C --> Switch to call option test", 305, 410, size=14)
+    drawLabel("P --> Switch to put option test", 305, 445, size=14)
+    drawLabel("ENTER --> Submit drawing", 305, 480, size=14)
+    drawLabel("ENTER again --> New problem", 305, 515, size=14)
+    drawLabel("Click chart --> Clear drawing", 305, 550, size=14)
+    drawLabel("CARPE DIEM !", 305, 620,size=14, bold=True,font=SCHOOL_FONT)
 
     # ---------- How to use ----------
     drawLabel("HOW TO USE THE APP", 755, 120, size=20, bold=True,font=SCHOOL_FONT)
@@ -827,10 +883,10 @@ def drawInstructionsScreen(app):
     drawLabel("PRO TIP: Practice with the learning tool to do better on the tests!", 755, 515, size=14)
     drawLabel("Hit the red BACK button at any time to return to the main screen", 755, 550, size=14)
 
-    drawLabel("GOOD LUCK :-)", 755, 620, size=14, bold=True,font=SCHOOL_FONT)
+    drawLabel("GOOD LUCK : - )", 755, 620, size=14, bold=True,font=SCHOOL_FONT)
 
 def drawExplanationScreen(app):
-    drawLabel("WHAT DOES THIS APP DO?", app.width/2, 40, size=25, bold=True,font=SCHOOL_FONT)
+    drawLabel("ADDITIONAL INFORMATION", app.width/2, 45, size=25, bold=True,font=SCHOOL_FONT)
     drawBackButton()
 
     PANEL_X = 100
@@ -878,7 +934,7 @@ def drawExplanationScreen(app):
     drawLabel("Red dashed line — your current stock price S.",
               275+PANEL_X, 627, size=13)
 
-    # ---------- black-scholes ----------
+    # ---------- Black-scholes ----------
     drawLabel("BLACK-SCHOLES", 805, 90, size=20, bold=True, align='center',font=SCHOOL_FONT)
     drawRect(680,115, 250, 375,
              fill=POSTIT_FILL, border='black', borderWidth=3,opacity=60)
@@ -901,7 +957,7 @@ def drawExplanationScreen(app):
     drawLabel("r -> risk-free rate", 805, 430, size=14)
     drawLabel("sigma (σ) -> volatility", 805, 460, size=14)
 
-    # ---------- note ----------
+    # ---------- Note ----------
     drawRect(680,510,250,160,fill=POSTIT_FILL, border='black', borderWidth=3,opacity=60)
     drawLabel("NOTE!!!",960, 590, size=20,font=SCHOOL_FONT,rotateAngle=90)
     drawLabel("BS Model is designed to", 805, 530, size=14)
@@ -927,9 +983,11 @@ def drawLevelSelection(app):
     drawRect(100, 90, 450, 450,
              fill=POSTIT_FILL, border='black', borderWidth=3, opacity=90)
     drawRect(325,90,100,40,opacity=20,align='center')
-    drawLabel("LEVEL SELECTION",325,150,bold=True,size=24,font=SCHOOL_FONT)
+    drawLabel("LEVEL SELECTION",325,150,bold=True,
+              size=24,font=SCHOOL_FONT)
     for i in range(1,6):
-        drawRect(190,140+i*60,90,30,fill='pink',opacity=90,align='center')
+        drawRect(190,140+i*60,90,30,
+                 fill='pink',opacity=90,align='center')
         drawLabel(f"LEVEL {i}: ",150,140 + i*60, font=SCHOOL_FONT,
                   size=20,align='left')
     drawLabel("1 slider changed to an endpoint",250,200,
@@ -1008,7 +1066,7 @@ def drawTestGradedUI(app):
             drawLine(prevX, prevY, sx, sy, fill='orange', lineWidth=3)
         prevX, prevY = sx, sy
 
-    drawStatsPanel(app)   # same panel, phase-aware
+    drawStatsPanel(app)
 
 def drawStatsPanel(app):
     drawLabel("TEST STATS",
@@ -1045,7 +1103,7 @@ def drawStatsPanel(app):
                   RIGHT_PANEL_LABEL_X, 658,
                   size=11, font=SCHOOL_FONT)
     else:
-        # --- Show coverage / submit hint ---
+        # --- Show coverage / submit ---
         coverage = computeCoverage(app)
         submitFailed = app.testSubmitMessage is not None
 
@@ -1056,9 +1114,9 @@ def drawStatsPanel(app):
         else:
             coverageColor = 'black'
 
-        drawLabel(f"Coverage: {coverage * 100:.0f}%",
+        drawLabel(f"COVERAGE: {coverage * 100:.0f}%",
                   RIGHT_PANEL_LABEL_X, 550,
-                  size=14, bold=True, font=SCHOOL_FONT, fill=coverageColor)
+                  size=18, bold=True, font=SCHOOL_FONT, fill=coverageColor)
 
         if submitFailed:
             drawLabel(f"Need at least {COVERAGE_THRESHOLD*100:.0f}% coverage to submit!",
@@ -1066,15 +1124,40 @@ def drawStatsPanel(app):
                       size=12, bold=True, fill='red', font=SCHOOL_FONT)
         else:
             drawLabel("Press ENTER to submit",
-                      RIGHT_PANEL_LABEL_X, 590, size=12, font=SCHOOL_FONT)
+                      RIGHT_PANEL_LABEL_X, 590, size=16, font=SCHOOL_FONT)
+            drawLabel("Click chart again to clear drawing",
+                      RIGHT_PANEL_LABEL_X, 625, size=16, font=SCHOOL_FONT)
 
 def drawBackButton():
     drawRect(0, 0, 100, 35, fill='red', opacity=60, border='black')
-    drawLabel("BACK", 50, 17.5, align='center', size=15, bold=True,font=SCHOOL_FONT)
+    drawLabel("BACK", 50, 17.5, align='center',
+              size=15, bold=True,font=SCHOOL_FONT)
 
 # ============= CONTROLLER ===============
 
 def onKeyPress(app, key):
+
+    # ===== GRADING SHORTCUTS =====
+    # only triggers when no text input is focused (so no firing while typing)
+    if app.selectedInput is None:
+        if key == 'v':
+            app.mode = 'main'
+            loadTickerData(app, 'AAPL')
+            return
+        elif key == 'i':
+            app.mode = 'instructions'
+            return
+        elif key == 'e':
+            app.mode = 'explanation'
+            return
+        elif key in ('1', '3', '5'):
+            app.mode = 'test'
+            app.testLevel = int(key)
+            app.testPhase = 'drawing'
+            buildTestProblems(app)
+            return
+
+    # ===== REGULAR APP =====
     if app.mode == 'main':
         if app.selectedInput is not None:
             if key == 'enter':
@@ -1226,7 +1309,7 @@ def onMouseDrag(app, mouseX, mouseY):
         dx, dy = screenToData(clampedX, clampedY, minX, maxX, minY, maxY)
         app.testUserPoints.append((dx, dy))
 
-        # Clear failed-submit warning once they've drawn enough to pass
+        # once they're past threshold, don't show the message
         if (app.testSubmitMessage is not None
             and computeCoverage(app) >= COVERAGE_THRESHOLD):
             app.testSubmitMessage = None
